@@ -1,0 +1,3 @@
+FROM busybox
+ADD bin/supervisord /opt/bin/supervisord
+ENTRYPOINT "/opt/bin/supervisord"

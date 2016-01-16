@@ -1,0 +1,3 @@
+FROM busybox
+ADD bin/agentd /opt/bin/agentd
+ENTRYPOINT "/opt/bin/agentd"
