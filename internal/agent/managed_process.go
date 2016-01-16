@@ -34,20 +34,22 @@ func (mproc *managedProcess) listenStop() {
 	if timeout != 0 {
 		stopped := make(chan struct{}, 0)
 		go func() {
-			if err := mproc.proc.Stop(); err != nil {
+			if err := mproc.proc.Stop(timeout); err != nil {
 				mproc.ag.handleError(err)
 			} else {
 				close(stopped)
 			}
 		}()
+		// give it a chance to stop cleanly
 		select {
 		case <-time.After(timeout):
 		case <-stopped:
 			return
 		}
-		if err := mproc.proc.Kill(); err != nil {
-			mproc.ag.handleError(fmt.Errorf("killing process %v: %v", mproc.proc.ID(), err))
-		}
+	}
+
+	if err := mproc.proc.Kill(); err != nil {
+		mproc.ag.handleError(fmt.Errorf("killing process %v: %v", mproc.proc.ID(), err))
 	}
 }
 

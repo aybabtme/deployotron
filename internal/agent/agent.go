@@ -56,6 +56,16 @@ func (ag *agent) start(prgm container.Program) error {
 	return nil
 }
 
+func (ag *agent) StopAll(id container.ProgramID, timeout time.Duration) error {
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
+	for _, mproc := range ag.instances[id] {
+		mproc.stop(timeout)
+		ag.dropInstance(mproc)
+	}
+	return nil
+}
+
 // Restart all the process running a program while respecting a policy.
 func (ag *agent) Restart(policy restartPolicy, id container.ProgramID) error {
 	prgm, ok, err := ag.client.Programs().Get(id)
