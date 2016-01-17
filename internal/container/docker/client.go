@@ -94,6 +94,11 @@ type programID struct {
 	imgName string
 }
 
+// ProgramID returns a container.ProgramID made from a docker image.
+func ProgramID(dockerImageName string) container.ProgramID {
+	return programID{imgName: dockerImageName}
+}
+
 func checkProgramID(id container.ProgramID) programID {
 	pid, ok := id.(programID)
 	if !ok {

@@ -11,7 +11,7 @@ import (
 type managedProcess struct {
 	kill chan time.Duration
 	done chan struct{}
-	ag   *agent
+	ag   *Agent
 	proc container.Process
 }
 

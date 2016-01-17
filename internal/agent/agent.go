@@ -14,7 +14,8 @@ type restartPolicy interface {
 	Timeout() time.Duration
 }
 
-type agent struct {
+// An Agent supervises programs.
+type Agent struct {
 	client container.Client
 
 	mu        sync.Mutex
@@ -22,15 +23,17 @@ type agent struct {
 	started   map[container.ProcessID]*managedProcess
 }
 
-func newAgent(client container.Client) *agent {
-	return &agent{
+// New creates an agent that executes programs.
+func New(client container.Client) *Agent {
+	return &Agent{
 		client:    client,
 		instances: make(map[container.ProgramID]map[container.ProcessID]*managedProcess),
 		started:   make(map[container.ProcessID]*managedProcess),
 	}
 }
 
-func (ag *agent) Start(id container.ProgramID) error {
+// Start a program.
+func (ag *Agent) Start(id container.ProgramID) error {
 	prgm, err := ag.client.Programs().Pull(id)
 	if err != nil {
 		return fmt.Errorf("pulling program: %v", err)
@@ -38,7 +41,7 @@ func (ag *agent) Start(id container.ProgramID) error {
 	return ag.start(prgm)
 }
 
-func (ag *agent) start(prgm container.Program) error {
+func (ag *Agent) start(prgm container.Program) error {
 	proc, err := ag.client.Processes().Create(prgm)
 	if err != nil {
 		return fmt.Errorf("creating process: %v", err)
@@ -56,7 +59,8 @@ func (ag *agent) start(prgm container.Program) error {
 	return nil
 }
 
-func (ag *agent) StopAll(id container.ProgramID, timeout time.Duration) error {
+// StopAll stops all processes of a program.
+func (ag *Agent) StopAll(id container.ProgramID, timeout time.Duration) error {
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
 	for _, mproc := range ag.instances[id] {
@@ -67,7 +71,7 @@ func (ag *agent) StopAll(id container.ProgramID, timeout time.Duration) error {
 }
 
 // Restart all the process running a program while respecting a policy.
-func (ag *agent) Restart(policy restartPolicy, id container.ProgramID) error {
+func (ag *Agent) Restart(policy restartPolicy, id container.ProgramID) error {
 	prgm, ok, err := ag.client.Programs().Get(id)
 	switch {
 	case err != nil:
@@ -81,7 +85,7 @@ func (ag *agent) Restart(policy restartPolicy, id container.ProgramID) error {
 }
 
 // Upgrade from a program to another while respecting the policy.
-func (ag *agent) Upgrade(policy restartPolicy, from, to container.ProgramID) error {
+func (ag *Agent) Upgrade(policy restartPolicy, from, to container.ProgramID) error {
 	fromPrgm, ok, err := ag.client.Programs().Get(from)
 	switch {
 	case err != nil:
@@ -100,7 +104,7 @@ func (ag *agent) Upgrade(policy restartPolicy, from, to container.ProgramID) err
 	return ag.cycleProcesses(policy, fromPrgm, toPrgm)
 }
 
-func (ag *agent) cycleProcesses(policy restartPolicy, from, to container.Program) error {
+func (ag *Agent) cycleProcesses(policy restartPolicy, from, to container.Program) error {
 	unordered, ok := ag.instances[from.ID()]
 	if !ok {
 		return fmt.Errorf("no instance of program %v is running", from)
@@ -131,7 +135,7 @@ func (ag *agent) cycleProcesses(policy restartPolicy, from, to container.Program
  helpers
 */
 
-func (ag *agent) recordInstance(mproc *managedProcess) {
+func (ag *Agent) recordInstance(mproc *managedProcess) {
 	prgmID := mproc.proc.Program().ID()
 	procID := mproc.proc.ID()
 	ag.started[procID] = mproc
@@ -141,7 +145,7 @@ func (ag *agent) recordInstance(mproc *managedProcess) {
 	ag.instances[prgmID][procID] = mproc
 }
 
-func (ag *agent) dropInstance(mproc *managedProcess) {
+func (ag *Agent) dropInstance(mproc *managedProcess) {
 	prgmID := mproc.proc.Program().ID()
 	procID := mproc.proc.ID()
 	instances, ok := ag.instances[prgmID]
@@ -156,6 +160,6 @@ func (ag *agent) dropInstance(mproc *managedProcess) {
 	}
 }
 
-func (ag *agent) handleError(err error) {
+func (ag *Agent) handleError(err error) {
 	log.Err(err).Error("unexpected error")
 }

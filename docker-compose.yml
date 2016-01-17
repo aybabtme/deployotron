@@ -1,19 +1,19 @@
 dockerd:
   image: docker:dind
   privileged: true # required for the daemon only
-  links:
-    - registry
+  # links:
+  #   - registry
 agentd:
   build: .
   dockerfile: Dockerfile.agentd
   links:
-    - supervisord
+    # - supervisord
     - dockerd
-    - registry
-supervisord:
-  build: .
-  dockerfile: Dockerfile.supervisord
-  links:
-    - registry
-registry:
-  image: distribution/registry
+    # - registry
+# supervisord:
+#   build: .
+#   dockerfile: Dockerfile.supervisord
+#   links:
+#     - registry
+# registry:
+#   image: distribution/registry
