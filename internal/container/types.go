@@ -21,7 +21,9 @@ type ProcessSvc interface {
 }
 
 // A ProgramID uniquely identifies a Program.
-type ProgramID interface{}
+type ProgramID interface {
+	String() string
+}
 
 // A Program is the template of a Process.
 type Program interface {
@@ -29,7 +31,9 @@ type Program interface {
 }
 
 // A ProcessID uniquely idenfities a Process.
-type ProcessID interface{}
+type ProcessID interface {
+	String() string
+}
 
 // A Process is the running execution of a program.
 type Process interface {

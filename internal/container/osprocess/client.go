@@ -2,11 +2,14 @@ package osprocess
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/aybabtme/deployotron/internal/container"
+	"github.com/pborman/uuid"
 )
 
 // Installer knows how to install programs in the $PATH.
@@ -51,14 +54,16 @@ func (svc *programSvc) Pull(id container.ProgramID) (container.Program, error) {
 func (svc *programSvc) Get(id container.ProgramID) (container.Program, bool, error) {
 	prgmID := checkProgramID(id)
 
-	path, err := exec.LookPath(prgmID.name)
+	argv := strings.Split(prgmID.name, " ")
+
+	path, err := exec.LookPath(argv[0])
 	if perr, ok := err.(*exec.Error); ok && perr.Err == exec.ErrNotFound {
 		return nil, false, nil
 	} else if err != nil {
 		return nil, false, err
 	}
 
-	return &program{id: prgmID, path: path}, true, nil
+	return program{id: prgmID, path: path, argv: argv[1:]}, true, nil
 }
 
 type programID struct {
@@ -69,6 +74,8 @@ type programID struct {
 func ProgramID(name string) container.ProgramID {
 	return programID{name: name}
 }
+
+func (pid programID) String() string { return fmt.Sprintf("osprocess.%s", pid.name) }
 
 func checkProgramID(id container.ProgramID) programID {
 	pid, ok := id.(programID)
@@ -81,6 +88,7 @@ func checkProgramID(id container.ProgramID) programID {
 type program struct {
 	id   programID
 	path string
+	argv []string
 }
 
 func (prgm program) ID() container.ProgramID {
@@ -97,11 +105,9 @@ func checkProgram(prgm container.Program) program {
 
 // process stuff
 
-type processID struct{ pid int }
+type processID struct{ uuid string }
 
-func procIDFromCmd(cmd *exec.Cmd) processID {
-	return processID{pid: cmd.Process.Pid}
-}
+func (pid processID) String() string { return fmt.Sprintf("osprocess.%s", pid.uuid) }
 
 type process struct {
 	svc  *processSvc
@@ -116,27 +122,37 @@ type processSvc struct {
 
 func (svc *processSvc) Create(prgm container.Program) (container.Process, error) {
 	osPrgm := checkProgram(prgm)
-	cmd := exec.Command(osPrgm.path)
-	var id processID
-	if cmd.Process != nil {
-		id = procIDFromCmd(cmd)
-	}
+	uuid := uuid.New()
 	return &process{
 		svc:  svc,
 		prgm: osPrgm,
-		id:   id,
-		cmd:  cmd,
+		id:   processID{uuid: uuid},
+		cmd:  svc.create(osPrgm.path, osPrgm.argv),
 	}, nil
+}
+
+func (svc *processSvc) create(path string, argv []string) *exec.Cmd {
+	cmd := exec.Command(path, argv...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd
 }
 
 func (proc *process) ID() container.ProcessID    { return proc.id }
 func (proc *process) Program() container.Program { return proc.prgm }
 
 func (proc *process) Start() error {
+	if proc.cmd.Process != nil {
+		if err := proc.cmd.Process.Release(); err != nil {
+			return fmt.Errorf("releasing OS process before starting: %v", err)
+		}
+
+		proc.cmd = proc.svc.create(proc.prgm.path, proc.prgm.argv)
+	}
+
 	if err := proc.cmd.Start(); err != nil {
 		return fmt.Errorf("starting OS process: %v", err)
 	}
-	proc.id = procIDFromCmd(proc.cmd)
 	return nil
 }
 

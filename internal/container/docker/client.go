@@ -108,6 +108,7 @@ func checkProgramID(id container.ProgramID) programID {
 }
 
 func (pid programID) ImageName() string { return pid.imgName }
+func (pid programID) String() string    { return "docker." + pid.imgName }
 
 // process stuff
 
@@ -139,6 +140,10 @@ type processID struct{ id string }
 
 func procIDFromContainer(dkCtnr *docker.Container) processID {
 	return processID{id: dkCtnr.ID}
+}
+
+func (pid processID) String() string {
+	return fmt.Sprintf("docker.%s", pid.id)
 }
 
 type process struct {

@@ -9,11 +9,6 @@ import (
 	"github.com/aybabtme/log"
 )
 
-type restartPolicy interface {
-	Do(count int, stop func(int) error, start func(int) error) error
-	Timeout() time.Duration
-}
-
 // An Agent supervises programs.
 type Agent struct {
 	client container.Client
@@ -38,6 +33,8 @@ func (ag *Agent) Start(id container.ProgramID) error {
 	if err != nil {
 		return fmt.Errorf("pulling program: %v", err)
 	}
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
 	return ag.start(prgm)
 }
 
@@ -49,8 +46,7 @@ func (ag *Agent) start(prgm container.Program) error {
 	if err := proc.Start(); err != nil {
 		return fmt.Errorf("starting process: %v", err)
 	}
-	ag.mu.Lock()
-	defer ag.mu.Unlock()
+
 	if _, ok := ag.started[proc.ID()]; ok {
 		return fmt.Errorf("process is already managed: %v", proc.ID())
 	}
@@ -71,7 +67,7 @@ func (ag *Agent) StopAll(id container.ProgramID, timeout time.Duration) error {
 }
 
 // Restart all the process running a program while respecting a policy.
-func (ag *Agent) Restart(policy restartPolicy, id container.ProgramID) error {
+func (ag *Agent) Restart(policy RestartPolicy, id container.ProgramID) error {
 	prgm, ok, err := ag.client.Programs().Get(id)
 	switch {
 	case err != nil:
@@ -85,7 +81,7 @@ func (ag *Agent) Restart(policy restartPolicy, id container.ProgramID) error {
 }
 
 // Upgrade from a program to another while respecting the policy.
-func (ag *Agent) Upgrade(policy restartPolicy, from, to container.ProgramID) error {
+func (ag *Agent) Upgrade(policy RestartPolicy, from, to container.ProgramID) error {
 	fromPrgm, ok, err := ag.client.Programs().Get(from)
 	switch {
 	case err != nil:
@@ -104,7 +100,7 @@ func (ag *Agent) Upgrade(policy restartPolicy, from, to container.ProgramID) err
 	return ag.cycleProcesses(policy, fromPrgm, toPrgm)
 }
 
-func (ag *Agent) cycleProcesses(policy restartPolicy, from, to container.Program) error {
+func (ag *Agent) cycleProcesses(policy RestartPolicy, from, to container.Program) error {
 	unordered, ok := ag.instances[from.ID()]
 	if !ok {
 		return fmt.Errorf("no instance of program %v is running", from)

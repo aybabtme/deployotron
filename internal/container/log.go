@@ -68,7 +68,6 @@ func (log *logProcessSvc) Create(prgm Program) (Process, error) {
 		ll.Err(err).Error("failed creating process")
 		return nil, err
 	}
-	ll = ll.KV("proc.id", proc.ID())
 	ll.Info("done creating process")
 	return &logProcess{wrap: proc, l: ll}, err
 }
@@ -87,6 +86,7 @@ func (log *logProcess) Start() error {
 		log.l.Err(err).Error("failed starting process")
 		return err
 	}
+	log.l = log.l.KV("proc.id", log.ID())
 	log.l.Info("done starting process")
 	return nil
 }

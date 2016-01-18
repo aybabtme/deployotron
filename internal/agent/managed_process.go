@@ -9,14 +9,14 @@ import (
 )
 
 type managedProcess struct {
-	kill chan time.Duration
+	kill chan *stopJob
 	done chan struct{}
 	ag   *Agent
 	proc container.Process
 }
 
 func manage(proc container.Process) *managedProcess {
-	kill := make(chan time.Duration, 1)
+	kill := make(chan *stopJob, 1)
 	done := make(chan struct{})
 	mproc := &managedProcess{kill: kill, proc: proc, done: done}
 	go mproc.listenStop()
@@ -29,12 +29,13 @@ func (mproc *managedProcess) handleError(err error) {
 }
 
 func (mproc *managedProcess) listenStop() {
-	timeout := <-mproc.kill
+	job := <-mproc.kill
+	defer close(job.done)
 	close(mproc.done) // tell the keepAlive loop to give up
-	if timeout != 0 {
+	if job.timeout != 0 {
 		stopped := make(chan struct{}, 0)
 		go func() {
-			if err := mproc.proc.Stop(timeout); err != nil {
+			if err := mproc.proc.Stop(job.timeout); err != nil {
 				mproc.ag.handleError(err)
 			} else {
 				close(stopped)
@@ -42,7 +43,7 @@ func (mproc *managedProcess) listenStop() {
 		}()
 		// give it a chance to stop cleanly
 		select {
-		case <-time.After(timeout):
+		case <-time.After(job.timeout):
 		case <-stopped:
 			return
 		}
@@ -76,14 +77,22 @@ func (mproc *managedProcess) keepAlive() {
 				return // expected to die
 			default:
 				mproc.handleError(fmt.Errorf("trying to restart process %v: %v", proc.ID(), serr))
+				time.Sleep(500 * time.Millisecond)
 			}
 		}
 	}
 }
 
+type stopJob struct {
+	timeout time.Duration
+	done    chan struct{}
+}
+
 func (mproc *managedProcess) stop(timeout time.Duration) {
+	job := &stopJob{timeout: timeout, done: make(chan struct{})}
 	select {
-	case mproc.kill <- timeout:
+	case mproc.kill <- job:
+		<-job.done
 	default:
 	}
 }
