@@ -43,7 +43,7 @@ func PolicyStopTimeout(policy RestartPolicy, timeout time.Duration) RestartPolic
 	}
 }
 
-// PolicyOneShot restarts everything at once.
+// PolicyAllAtOnce restarts everything at once.
 func PolicyAllAtOnce() RestartPolicy {
 	return &restarter{
 		do: func(count int, stop func(int) error, start func(int) error) error {

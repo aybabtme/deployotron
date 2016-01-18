@@ -41,6 +41,11 @@ func main() {
 	}
 	time.Sleep(3 * time.Second)
 
+	if err := ag.Start(img); err != nil {
+		ll.Err(err).Fatal("couldn't start image")
+	}
+	time.Sleep(3 * time.Second)
+
 	ll.Info("restarting")
 	if err := ag.Restart(policy, img); err != nil {
 		ll.Err(err).Fatal("couldn't restart image")
