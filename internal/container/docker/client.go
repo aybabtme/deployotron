@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -31,6 +32,12 @@ type client struct {
 	programs  container.ProgramSvc
 	processes container.ProcessSvc
 }
+
+// ProgramID returns a container.ProgramID made from a docker image.
+func (dk *client) ProgramID(dockerImageName string) (container.ProgramID, error) {
+	return &programID{ImgName: dockerImageName}, nil
+}
+func (dk *client) MakeProcessID() container.ProcessID { return new(processID) }
 
 func (dk *client) Programs() container.ProgramSvc  { return dk.programs }
 func (dk *client) Processes() container.ProcessSvc { return dk.processes }
@@ -76,14 +83,14 @@ func (svc *programSvc) Get(id container.ProgramID) (container.Program, bool, err
 func (svc *programSvc) Remove(id container.ProgramID) error {
 	pid := checkProgramID(id)
 	dk := svc.client.dk
-	if err := dk.RemoveImage(pid.imgName); err != nil {
+	if err := dk.RemoveImage(pid.ImgName); err != nil {
 		return fmt.Errorf("removing docker image: %v", err)
 	}
 	return nil
 }
 
 type program struct {
-	id  programID
+	id  *programID
 	img docker.Image
 }
 
@@ -100,24 +107,21 @@ func (prgm program) ID() container.ProgramID {
 }
 
 type programID struct {
-	imgName string
+	ImgName string `json:"docker_program_image_name"`
 }
 
-// ProgramID returns a container.ProgramID made from a docker image.
-func ProgramID(dockerImageName string) container.ProgramID {
-	return programID{imgName: dockerImageName}
-}
-
-func checkProgramID(id container.ProgramID) programID {
-	pid, ok := id.(programID)
+func checkProgramID(id container.ProgramID) *programID {
+	pid, ok := id.(*programID)
 	if !ok {
 		panic(fmt.Sprintf("bad container.ProgramID, want %T got %T", programID{}, id))
 	}
 	return pid
 }
 
-func (pid programID) ImageName() string { return pid.imgName }
-func (pid programID) String() string    { return "docker." + pid.imgName }
+func (pid programID) ImageName() string           { return pid.ImgName }
+func (pid programID) String() string              { return "docker." + pid.ImgName }
+func (pid programID) Marshal() ([]byte, error)    { return json.Marshal(pid) }
+func (pid *programID) Unmarshal(buf []byte) error { return json.Unmarshal(buf, pid) }
 
 // process stuff
 
@@ -149,7 +153,7 @@ func (svc *processSvc) Remove(proc container.Process) error {
 	dk := svc.client.dk
 	dkProc := checkProcess(proc)
 	opts := docker.RemoveContainerOptions{
-		ID: dkProc.id.id,
+		ID: dkProc.id.ID,
 	}
 	if err := dk.RemoveContainer(opts); err != nil {
 		return fmt.Errorf("removing docker container: %v", err)
@@ -157,19 +161,23 @@ func (svc *processSvc) Remove(proc container.Process) error {
 	return nil
 }
 
-type processID struct{ id string }
+type processID struct {
+	ID string `json:"docker_process_container_id"`
+}
 
-func procIDFromContainer(dkCtnr *docker.Container) processID {
-	return processID{id: dkCtnr.ID}
+func procIDFromContainer(dkCtnr *docker.Container) *processID {
+	return &processID{ID: dkCtnr.ID}
 }
 
 func (pid processID) String() string {
-	return fmt.Sprintf("docker.%s", pid.id)
+	return fmt.Sprintf("docker.%s", pid.ID)
 }
+func (pid processID) MarshalText() ([]byte, error)    { return json.Marshal(pid) }
+func (pid *processID) UnmarshalText(buf []byte) error { return json.Unmarshal(buf, pid) }
 
 type process struct {
 	svc       *processSvc
-	id        processID
+	id        *processID
 	prgm      program
 	container *docker.Container
 }
@@ -187,7 +195,7 @@ func (proc *process) Program() container.Program { return proc.prgm }
 
 func (proc *process) Start() error {
 	dk := proc.svc.client.dk
-	if err := dk.StartContainer(proc.id.id, nil); err != nil {
+	if err := dk.StartContainer(proc.id.ID, nil); err != nil {
 		return fmt.Errorf("starting docker container: %v", err)
 	}
 	return nil
@@ -196,7 +204,7 @@ func (proc *process) Start() error {
 func (proc *process) Stop(timeout time.Duration) error {
 	dk := proc.svc.client.dk
 	timeoutSec := uint(timeout.Seconds())
-	if err := dk.StopContainer(proc.id.id, timeoutSec); err != nil {
+	if err := dk.StopContainer(proc.id.ID, timeoutSec); err != nil {
 		return fmt.Errorf("stopping docker container: %v", err)
 	}
 	return nil
@@ -204,7 +212,7 @@ func (proc *process) Stop(timeout time.Duration) error {
 
 func (proc *process) Kill() error {
 	dk := proc.svc.client.dk
-	if err := dk.KillContainer(docker.KillContainerOptions{ID: proc.id.id}); err != nil {
+	if err := dk.KillContainer(docker.KillContainerOptions{ID: proc.id.ID}); err != nil {
 		return fmt.Errorf("killing docker container: %v", err)
 	}
 	return nil
@@ -213,7 +221,7 @@ func (proc *process) Kill() error {
 func (proc *process) Wait() error {
 	dk := proc.svc.client.dk
 	// TODO(antoine): maybe someone cares about the exit code one day
-	if _, err := dk.WaitContainer(proc.id.id); err != nil {
+	if _, err := dk.WaitContainer(proc.id.ID); err != nil {
 		return fmt.Errorf("waiting on docker container: %v", err)
 	}
 	return nil

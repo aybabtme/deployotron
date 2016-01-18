@@ -3,8 +3,15 @@ package container
 
 import "time"
 
+// A ProgramProvider can instantiate a ProgramID from a name.
+type ProgramProvider interface {
+	ProgramID(name string) (ProgramID, error)
+	MakeProcessID() ProcessID
+}
+
 // A Client knows how to do container stuff.
 type Client interface {
+	ProgramProvider
 	Programs() ProgramSvc
 	Processes() ProcessSvc
 }
@@ -24,6 +31,8 @@ type ProcessSvc interface {
 
 // A ProgramID uniquely identifies a Program.
 type ProgramID interface {
+	Marshal() ([]byte, error)
+	Unmarshal(buf []byte) error
 	String() string
 }
 
@@ -34,6 +43,8 @@ type Program interface {
 
 // A ProcessID uniquely idenfities a Process.
 type ProcessID interface {
+	Marshal() ([]byte, error)
+	Unmarshal(buf []byte) error
 	String() string
 }
 
