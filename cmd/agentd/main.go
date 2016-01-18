@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/aybabtme/deployotron/internal/agent"
-	"github.com/aybabtme/deployotron/internal/container"
 	"github.com/aybabtme/deployotron/internal/container/osprocess"
 	// "github.com/aybabtme/deployotron/internal/container/docker"
 
@@ -30,7 +29,7 @@ func main() {
 	// client = container.Log(client, log.KV("container", "docker"))
 
 	client := osprocess.New(nil)
-	client = container.Log(client, log.KV("container", "osprocess"))
+	// client = container.Log(client, log.KV("container", "osprocess"))
 
 	img := osprocess.ProgramID("echoer v1")
 	ll = ll.KV("program.id", img)
@@ -60,7 +59,7 @@ func main() {
 	time.Sleep(3 * time.Second)
 
 	ll.Info("stopping all processes")
-	if err := ag.StopAll(img, 10*time.Second); err != nil {
+	if err := ag.StopAll(newImg, 10*time.Second); err != nil {
 		ll.Err(err).Fatal("couldn't stop image")
 	}
 	ll.Info("all done!")
