@@ -13,11 +13,13 @@ type Client interface {
 type ProgramSvc interface {
 	Pull(id ProgramID) (Program, error)
 	Get(id ProgramID) (Program, bool, error)
+	Remove(id ProgramID) error
 }
 
 // A ProcessSvc is a service to interact with processes.
 type ProcessSvc interface {
 	Create(Program) (Process, error)
+	Remove(Process) error
 }
 
 // A ProgramID uniquely identifies a Program.

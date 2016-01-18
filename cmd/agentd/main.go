@@ -28,7 +28,7 @@ func main() {
 	// }
 	// client = container.Log(client, log.KV("container", "docker"))
 
-	client := osprocess.New(nil)
+	client := osprocess.New(osprocess.NopInstaller())
 	// client = container.Log(client, log.KV("container", "osprocess"))
 
 	img := osprocess.ProgramID("echoer v1")
@@ -36,18 +36,18 @@ func main() {
 
 	ag := agent.New(client)
 	ll.Info("starting program")
-	if err := ag.Start(img); err != nil {
+	if _, err := ag.StartProcess(img); err != nil {
 		ll.Err(err).Fatal("couldn't start image")
 	}
 	time.Sleep(3 * time.Second)
 
-	if err := ag.Start(img); err != nil {
+	if _, err := ag.StartProcess(img); err != nil {
 		ll.Err(err).Fatal("couldn't start image")
 	}
 	time.Sleep(3 * time.Second)
 
 	ll.Info("restarting")
-	if err := ag.Restart(policy, img); err != nil {
+	if err := ag.RestartProgram(policy, img); err != nil {
 		ll.Err(err).Fatal("couldn't restart image")
 	}
 
@@ -56,7 +56,7 @@ func main() {
 
 	newImg := osprocess.ProgramID("echoer v2")
 	ll.Info("upgrading")
-	if err := ag.Upgrade(policy, img, newImg); err != nil {
+	if err := ag.UpgradeProgram(policy, img, newImg); err != nil {
 		ll.Err(err).Fatal("couldn't restart image")
 	}
 
@@ -64,7 +64,7 @@ func main() {
 	time.Sleep(3 * time.Second)
 
 	ll.Info("stopping all processes")
-	if err := ag.StopAll(newImg, 10*time.Second); err != nil {
+	if err := ag.StopProgram(newImg, 10*time.Second); err != nil {
 		ll.Err(err).Fatal("couldn't stop image")
 	}
 	ll.Info("all done!")

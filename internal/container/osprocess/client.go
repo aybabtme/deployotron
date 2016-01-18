@@ -15,7 +15,18 @@ import (
 // Installer knows how to install programs in the $PATH.
 type Installer interface {
 	Install(name string) error
+	Uninstall(name string) error
 }
+
+// NopInstaller doesn't install or uninstall anything.
+func NopInstaller() Installer {
+	return nopInstaller{}
+}
+
+type nopInstaller struct{}
+
+func (nopInstaller) Install(name string) error   { return fmt.Errorf("nop-install can't install") }
+func (nopInstaller) Uninstall(name string) error { return fmt.Errorf("nop-install can't uninstall") }
 
 type client struct {
 	installer Installer
@@ -25,7 +36,7 @@ type client struct {
 
 // New creates a client that spawns regular OS processes.
 func New(installer Installer) container.Client {
-	cl := &client{}
+	cl := &client{installer: installer}
 	cl.programs = &programSvc{client: cl}
 	cl.processes = &processSvc{client: cl}
 	return cl
@@ -64,6 +75,11 @@ func (svc *programSvc) Get(id container.ProgramID) (container.Program, bool, err
 	}
 
 	return program{id: prgmID, path: path, argv: argv[1:]}, true, nil
+}
+
+func (svc *programSvc) Remove(id container.ProgramID) error {
+	prgmID := checkProgramID(id)
+	return svc.client.installer.Uninstall(prgmID.name)
 }
 
 type programID struct {
@@ -130,6 +146,8 @@ func (svc *processSvc) Create(prgm container.Program) (container.Process, error)
 		cmd:  svc.create(osPrgm.path, osPrgm.argv),
 	}, nil
 }
+
+func (svc *processSvc) Remove(proc container.Process) error { return nil } // nothing to do
 
 func (svc *processSvc) create(path string, argv []string) *exec.Cmd {
 	cmd := exec.Command(path, argv...)

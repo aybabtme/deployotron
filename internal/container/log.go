@@ -54,6 +54,17 @@ func (log *logProgramSvc) Get(id ProgramID) (Program, bool, error) {
 	return prgm, ok, err
 }
 
+func (log *logProgramSvc) Remove(id ProgramID) error {
+	ll := log.l.KV("program.id", id)
+	ll.Info("removing program")
+
+	err := log.wrap.Remove(id)
+	if err != nil {
+		ll.Err(err).Error("failed removing program")
+	}
+	return err
+}
+
 type logProcessSvc struct {
 	wrap ProcessSvc
 	l    *log.Log
@@ -70,6 +81,19 @@ func (log *logProcessSvc) Create(prgm Program) (Process, error) {
 	}
 	ll.Info("done creating process")
 	return &logProcess{wrap: proc, l: ll}, err
+}
+
+func (log *logProcessSvc) Remove(proc Process) error {
+	ll := log.l.KV("proc.id", proc.ID())
+	ll.Info("removing process")
+
+	err := log.wrap.Remove(proc)
+	if err != nil {
+		ll.Err(err).Error("failed removing process")
+		return err
+	}
+	ll.Info("done removing process")
+	return err
 }
 
 type logProcess struct {

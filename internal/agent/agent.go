@@ -27,36 +27,161 @@ func New(client container.Client) *Agent {
 	}
 }
 
-// Start a program.
-func (ag *Agent) Start(id container.ProgramID) error {
-	prgm, err := ag.client.Programs().Pull(id)
-	if err != nil {
-		return fmt.Errorf("pulling program: %v", err)
-	}
+/*
+ General API
+*/
+
+// ListAll returns all programs and their currently instanticated processes.
+func (ag *Agent) ListAll() map[container.ProgramID][]container.ProcessID {
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
-	return ag.start(prgm)
+	out := make(map[container.ProgramID][]container.ProcessID, len(ag.instances))
+	for id, mprocs := range ag.instances {
+		procs := make([]container.ProcessID, 0, len(mprocs))
+		for _, mproc := range mprocs {
+			procs = append(procs, mproc.proc.ID())
+		}
+		out[id] = procs
+	}
+	return out
 }
 
-func (ag *Agent) start(prgm container.Program) error {
-	proc, err := ag.client.Processes().Create(prgm)
-	if err != nil {
-		return fmt.Errorf("creating process: %v", err)
-	}
-	if err := proc.Start(); err != nil {
-		return fmt.Errorf("starting process: %v", err)
-	}
+// RestartAll restart all programs and their currently instanticated processes.
+func (ag *Agent) RestartAll(policy RestartPolicy) error {
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
 
-	if _, ok := ag.started[proc.ID()]; ok {
-		return fmt.Errorf("process is already managed: %v", proc.ID())
+	for prgmID := range ag.instances {
+		prgm, ok, err := ag.client.Programs().Get(prgmID)
+		if !ok {
+			panic(fmt.Sprintf("program %v should be present, internal structure is inconsistent: %#v", prgmID, ag.instances))
+		}
+		if err != nil {
+			return fmt.Errorf("restarting all processes, retrieving program %v: %v", prgmID, err)
+		}
+		if err := ag.cycleProcesses(policy, prgm, prgm); err != nil {
+			return fmt.Errorf("restarting all processes, cycling program %v: %v", prgmID, err)
+		}
 	}
-	mproc := manage(proc)
-	ag.recordInstance(mproc)
 	return nil
 }
 
-// StopAll stops all processes of a program.
-func (ag *Agent) StopAll(id container.ProgramID, timeout time.Duration) error {
+/*
+ Process scoped API
+*/
+
+// StartProcess a process running the given program.
+func (ag *Agent) StartProcess(id container.ProgramID) (container.ProcessID, error) {
+	prgm, err := ag.client.Programs().Pull(id)
+	if err != nil {
+		return nil, fmt.Errorf("pulling program: %v", err)
+	}
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
+	return ag.startProcess(prgm)
+}
+
+func (ag *Agent) startProcess(prgm container.Program) (container.ProcessID, error) {
+	proc, err := ag.client.Processes().Create(prgm)
+	if err != nil {
+		return nil, fmt.Errorf("creating process: %v", err)
+	}
+	if err := proc.Start(); err != nil {
+		return nil, fmt.Errorf("starting process: %v", err)
+	}
+
+	if _, ok := ag.started[proc.ID()]; ok {
+		return nil, fmt.Errorf("process is already managed: %v", proc.ID())
+	}
+	mproc := manage(proc)
+	ag.recordInstance(mproc)
+	return proc.ID(), nil
+}
+
+// StopProcess stops a running process.
+func (ag *Agent) StopProcess(id container.ProcessID, timeout time.Duration) error {
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
+	mproc, ok := ag.started[id]
+	if !ok {
+		return fmt.Errorf("no such process")
+	}
+	mproc.stop(timeout)
+	ag.dropInstance(mproc)
+	return nil
+}
+
+// RestartProcess restarts a single process.
+func (ag *Agent) RestartProcess(policy RestartPolicy, id container.ProcessID) error {
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
+	mproc, ok := ag.started[id]
+	if !ok {
+		return fmt.Errorf("no such process")
+	}
+
+	stop := func(i int) error {
+		mproc.stop(policy.Timeout())
+		ag.dropInstance(mproc)
+		return nil
+	}
+	start := func(i int) error {
+		if _, err := ag.startProcess(mproc.proc.Program()); err != nil {
+			return fmt.Errorf("restart failed to start: %v", err)
+		}
+		return nil
+	}
+
+	return policy.Do(1, stop, start)
+}
+
+// UpgradeProcess upgrades a single process to a new program.
+func (ag *Agent) UpgradeProcess(policy RestartPolicy, id container.ProcessID, to container.ProgramID) error {
+	toPrgm, err := ag.client.Programs().Pull(to)
+	if err != nil {
+		return fmt.Errorf("can't pull program to upgrade: %v", err)
+	}
+
+	// we pull programs before locking
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
+	mproc, ok := ag.started[id]
+	if !ok {
+		return fmt.Errorf("no such process")
+	}
+
+	stop := func(i int) error {
+		mproc.stop(policy.Timeout())
+		ag.dropInstance(mproc)
+		return nil
+	}
+	start := func(i int) error {
+		if _, err := ag.startProcess(toPrgm); err != nil {
+			return fmt.Errorf("upgrade failed to start: %v", err)
+		}
+		return nil
+	}
+
+	return policy.Do(1, stop, start)
+}
+
+/*
+ Program scoped API
+*/
+
+// ListProgram returns all the running instances of a program.
+func (ag *Agent) ListProgram(id container.ProgramID) ([]container.ProcessID, error) {
+	ag.mu.Lock()
+	defer ag.mu.Unlock()
+	var procIDs []container.ProcessID
+	for _, proc := range ag.instances[id] {
+		procIDs = append(procIDs, proc.proc.ID())
+	}
+	return procIDs, nil
+}
+
+// StopProgram stops all processes of a program.
+func (ag *Agent) StopProgram(id container.ProgramID, timeout time.Duration) error {
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
 	for _, mproc := range ag.instances[id] {
@@ -66,8 +191,8 @@ func (ag *Agent) StopAll(id container.ProgramID, timeout time.Duration) error {
 	return nil
 }
 
-// Restart all the process running a program while respecting a policy.
-func (ag *Agent) Restart(policy RestartPolicy, id container.ProgramID) error {
+// RestartProgram the processes running a program while respecting a policy.
+func (ag *Agent) RestartProgram(policy RestartPolicy, id container.ProgramID) error {
 	prgm, ok, err := ag.client.Programs().Get(id)
 	switch {
 	case err != nil:
@@ -80,8 +205,9 @@ func (ag *Agent) Restart(policy RestartPolicy, id container.ProgramID) error {
 	return ag.cycleProcesses(policy, prgm, prgm)
 }
 
-// Upgrade from a program to another while respecting the policy.
-func (ag *Agent) Upgrade(policy RestartPolicy, from, to container.ProgramID) error {
+// UpgradeProgram upgrades all instances of a program to another program
+// while respecting the policy.
+func (ag *Agent) UpgradeProgram(policy RestartPolicy, from, to container.ProgramID) error {
 	fromPrgm, ok, err := ag.client.Programs().Get(from)
 	switch {
 	case err != nil:
@@ -95,6 +221,7 @@ func (ag *Agent) Upgrade(policy RestartPolicy, from, to container.ProgramID) err
 		return fmt.Errorf("can't pull program to upgrade: %v", err)
 	}
 
+	// we pull programs before locking
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
 	return ag.cycleProcesses(policy, fromPrgm, toPrgm)
@@ -118,8 +245,8 @@ func (ag *Agent) cycleProcesses(policy RestartPolicy, from, to container.Program
 		return nil
 	}
 	start := func(i int) error {
-		if err := ag.start(to); err != nil {
-			return fmt.Errorf("cycle loop failed to start after stop: %v", err)
+		if _, err := ag.startProcess(to); err != nil {
+			return fmt.Errorf("cycle loop failed to start: %v", err)
 		}
 		return nil
 	}
@@ -153,6 +280,9 @@ func (ag *Agent) dropInstance(mproc *managedProcess) {
 	delete(instances, procID)
 	if len(instances) == 0 {
 		delete(ag.instances, prgmID)
+		if err := ag.client.Programs().Remove(prgmID); err != nil {
+			ag.handleError(fmt.Errorf("cleaning up no longer used program %v, %v", prgmID, err))
+		}
 	}
 }
 

@@ -73,6 +73,15 @@ func (svc *programSvc) Get(id container.ProgramID) (container.Program, bool, err
 	}
 }
 
+func (svc *programSvc) Remove(id container.ProgramID) error {
+	pid := checkProgramID(id)
+	dk := svc.client.dk
+	if err := dk.RemoveImage(pid.imgName); err != nil {
+		return fmt.Errorf("removing docker image: %v", err)
+	}
+	return nil
+}
+
 type program struct {
 	id  programID
 	img docker.Image
@@ -136,6 +145,18 @@ func (svc *processSvc) Create(prgm container.Program) (container.Process, error)
 	}, nil
 }
 
+func (svc *processSvc) Remove(proc container.Process) error {
+	dk := svc.client.dk
+	dkProc := checkProcess(proc)
+	opts := docker.RemoveContainerOptions{
+		ID: dkProc.id.id,
+	}
+	if err := dk.RemoveContainer(opts); err != nil {
+		return fmt.Errorf("removing docker container: %v", err)
+	}
+	return nil
+}
+
 type processID struct{ id string }
 
 func procIDFromContainer(dkCtnr *docker.Container) processID {
@@ -151,6 +172,14 @@ type process struct {
 	id        processID
 	prgm      program
 	container *docker.Container
+}
+
+func checkProcess(proc container.Process) *process {
+	dkproc, ok := proc.(*process)
+	if !ok {
+		panic(fmt.Sprintf("bad container.Process, want %T got %T", &process{}, proc))
+	}
+	return dkproc
 }
 
 func (proc *process) ID() container.ProcessID    { return proc.id }
