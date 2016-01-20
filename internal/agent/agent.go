@@ -14,18 +14,23 @@ type Agent struct {
 	client container.Client
 
 	mu        sync.Mutex
-	instances map[container.ProgramID]map[container.ProcessID]*managedProcess
-	started   map[container.ProcessID]*managedProcess
+	instances map[programID]map[processID]*managedProcess
+	started   map[processID]*managedProcess
 }
 
 // New creates an agent that executes programs.
 func New(client container.Client) *Agent {
 	return &Agent{
 		client:    client,
-		instances: make(map[container.ProgramID]map[container.ProcessID]*managedProcess),
-		started:   make(map[container.ProcessID]*managedProcess),
+		instances: make(map[programID]map[processID]*managedProcess),
+		started:   make(map[processID]*managedProcess),
 	}
 }
+
+type (
+	programID string
+	processID string
+)
 
 /*
  General API
@@ -36,12 +41,14 @@ func (ag *Agent) ListAll() map[container.ProgramID][]container.ProcessID {
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
 	out := make(map[container.ProgramID][]container.ProcessID, len(ag.instances))
-	for id, mprocs := range ag.instances {
+	for _, mprocs := range ag.instances {
 		procs := make([]container.ProcessID, 0, len(mprocs))
+		var prgmID container.ProgramID
 		for _, mproc := range mprocs {
+			prgmID = mproc.proc.ID()
 			procs = append(procs, mproc.proc.ID())
 		}
-		out[id] = procs
+		out[prgmID] = procs
 	}
 	return out
 }
@@ -51,7 +58,15 @@ func (ag *Agent) RestartAll(policy RestartPolicy) error {
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
 
-	for prgmID := range ag.instances {
+	for _, procs := range ag.instances {
+
+		// hack
+		var prgmID container.ProgramID
+		for _, proc := range procs {
+			prgmID = proc.proc.Program().ID()
+			break
+		}
+
 		prgm, ok, err := ag.client.Programs().Get(prgmID)
 		if !ok {
 			panic(fmt.Sprintf("program %v should be present, internal structure is inconsistent: %#v", prgmID, ag.instances))
@@ -90,7 +105,7 @@ func (ag *Agent) startProcess(prgm container.Program) (container.ProcessID, erro
 		return nil, fmt.Errorf("starting process: %v", err)
 	}
 
-	if _, ok := ag.started[proc.ID()]; ok {
+	if _, ok := ag.started[processID(proc.ID().String())]; ok {
 		return nil, fmt.Errorf("process is already managed: %v", proc.ID())
 	}
 	mproc := manage(proc)
@@ -102,9 +117,9 @@ func (ag *Agent) startProcess(prgm container.Program) (container.ProcessID, erro
 func (ag *Agent) StopProcess(id container.ProcessID, timeout time.Duration) error {
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
-	mproc, ok := ag.started[id]
+	mproc, ok := ag.started[processID(id.String())]
 	if !ok {
-		return fmt.Errorf("no such process")
+		return fmt.Errorf("no such process: %#v", id)
 	}
 	mproc.stop(timeout)
 	ag.dropInstance(mproc)
@@ -115,7 +130,7 @@ func (ag *Agent) StopProcess(id container.ProcessID, timeout time.Duration) erro
 func (ag *Agent) RestartProcess(policy RestartPolicy, id container.ProcessID) error {
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
-	mproc, ok := ag.started[id]
+	mproc, ok := ag.started[processID(id.String())]
 	if !ok {
 		return fmt.Errorf("no such process")
 	}
@@ -145,7 +160,7 @@ func (ag *Agent) UpgradeProcess(policy RestartPolicy, id container.ProcessID, to
 	// we pull programs before locking
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
-	mproc, ok := ag.started[id]
+	mproc, ok := ag.started[processID(id.String())]
 	if !ok {
 		return fmt.Errorf("no such process")
 	}
@@ -174,7 +189,7 @@ func (ag *Agent) ListProgram(id container.ProgramID) ([]container.ProcessID, err
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
 	var procIDs []container.ProcessID
-	for _, proc := range ag.instances[id] {
+	for _, proc := range ag.instances[programID(id.String())] {
 		procIDs = append(procIDs, proc.proc.ID())
 	}
 	return procIDs, nil
@@ -184,7 +199,7 @@ func (ag *Agent) ListProgram(id container.ProgramID) ([]container.ProcessID, err
 func (ag *Agent) StopProgram(id container.ProgramID, timeout time.Duration) error {
 	ag.mu.Lock()
 	defer ag.mu.Unlock()
-	for _, mproc := range ag.instances[id] {
+	for _, mproc := range ag.instances[programID(id.String())] {
 		mproc.stop(timeout)
 		ag.dropInstance(mproc)
 	}
@@ -228,7 +243,7 @@ func (ag *Agent) UpgradeProgram(policy RestartPolicy, from, to container.Program
 }
 
 func (ag *Agent) cycleProcesses(policy RestartPolicy, from, to container.Program) error {
-	unordered, ok := ag.instances[from.ID()]
+	unordered, ok := ag.instances[programID(from.ID().String())]
 	if !ok {
 		return fmt.Errorf("no instance of program %v is running", from)
 	}
@@ -259,18 +274,18 @@ func (ag *Agent) cycleProcesses(policy RestartPolicy, from, to container.Program
 */
 
 func (ag *Agent) recordInstance(mproc *managedProcess) {
-	prgmID := mproc.proc.Program().ID()
-	procID := mproc.proc.ID()
+	prgmID := programID(mproc.proc.Program().ID().String())
+	procID := processID(mproc.proc.ID().String())
 	ag.started[procID] = mproc
 	if _, ok := ag.instances[prgmID]; !ok {
-		ag.instances[prgmID] = make(map[container.ProcessID]*managedProcess, 0)
+		ag.instances[prgmID] = make(map[processID]*managedProcess, 0)
 	}
 	ag.instances[prgmID][procID] = mproc
 }
 
 func (ag *Agent) dropInstance(mproc *managedProcess) {
-	prgmID := mproc.proc.Program().ID()
-	procID := mproc.proc.ID()
+	prgmID := programID(mproc.proc.Program().ID().String())
+	procID := processID(mproc.proc.ID().String())
 	instances, ok := ag.instances[prgmID]
 	if !ok {
 		panic(fmt.Sprintf("can't delete program %v from instances %#v", prgmID, ag.instances))
@@ -280,7 +295,7 @@ func (ag *Agent) dropInstance(mproc *managedProcess) {
 	delete(instances, procID)
 	if len(instances) == 0 {
 		delete(ag.instances, prgmID)
-		if err := ag.client.Programs().Remove(prgmID); err != nil {
+		if err := ag.client.Programs().Remove(mproc.proc.Program().ID()); err != nil {
 			ag.handleError(fmt.Errorf("cleaning up no longer used program %v, %v", prgmID, err))
 		}
 	}

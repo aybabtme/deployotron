@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/aybabtme/deployotron/internal/agent"
-	"github.com/aybabtme/deployotron/internal/container"
 	"github.com/aybabtme/deployotron/internal/container/osprocess"
 	"github.com/aybabtme/deployotron/internal/rpc"
 
@@ -30,7 +29,7 @@ func main() {
 	defer ll.Info("all done")
 
 	client := osprocess.New(osprocess.NopInstaller())
-	client = container.Log(client, log.KV("container", "osprocess"))
+	// client = container.Log(client, log.KV("container", "osprocess"))
 
 	ag := agent.New(client)
 

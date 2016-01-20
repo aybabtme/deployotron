@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -47,9 +46,14 @@ type rpcServerReq struct {
 	Request    json.RawMessage `json:"request"`
 }
 
-type rpcRes struct {
+type rpcClientRes struct {
 	Response json.RawMessage `json:"response"`
 	Err      string          `json:"error"`
+}
+
+type rpcServerRes struct {
+	Response interface{} `json:"response"`
+	Err      string      `json:"error"`
 }
 
 type methodCall func(interface{}) (interface{}, error)
@@ -69,12 +73,12 @@ func (rep *representant) call(method string, req, res interface{}) error {
 	}); err != nil {
 		return fmt.Errorf("sending rpc request message: %v", err)
 	}
-	rpcRes := new(rpcRes)
+	rpcRes := new(rpcClientRes)
 	if err := rep.readMsg(rpcRes); err != nil {
 		return fmt.Errorf("reading rpc response message: %v", err)
 	}
 	if rpcRes.Err != "" {
-		return errors.New(rpcRes.Err)
+		return fmt.Errorf("error response: %s", rpcRes.Err)
 	}
 	if err := json.Unmarshal(rpcRes.Response, res); err != nil {
 		return fmt.Errorf("unmarshalling response: %v", err)
@@ -96,7 +100,7 @@ func (op *operator) service() error {
 		if err := op.readMsg(rpcReq); err != nil {
 			return fmt.Errorf("can't read message: %v", err)
 		}
-		rpcRes := new(rpcRes)
+		rpcRes := new(rpcServerRes)
 
 		// find where to dispatch
 		dispatcher, ok := rpcContract[rpcReq.MethodName]
@@ -108,28 +112,24 @@ func (op *operator) service() error {
 
 		// decode the method's arguments
 		if err := json.Unmarshal(rpcReq.Request, req); err != nil {
-			rpcRes.Err = err.Error()
+			rpcRes.Err = "internal error"
 			if err := op.sendMsg(rpcRes); err != nil {
-				return fmt.Errorf("sending unmarshall error: %v", err)
+				return fmt.Errorf("sending unmarshal error: %v", err)
 			}
-			return nil
+			return err
 		}
 
 		// invoke the method
 		res, err := method(req)
 		if err != nil {
-			rpcRes.Err = err.Error()
+			rpcRes.Err = fmt.Sprintf("method call error: %v", err)
 			if err := op.sendMsg(rpcRes); err != nil {
 				return fmt.Errorf("sending method call error: %v", err)
 			}
 		}
 
 		// encode the response
-		if buf, err := json.Marshal(res); err != nil {
-			rpcRes.Err = err.Error()
-		} else {
-			rpcRes.Response = buf
-		}
+		rpcRes.Response = res
 		if err := op.sendMsg(rpcRes); err != nil {
 			return fmt.Errorf("sending method call response: %v", err)
 		}
@@ -187,7 +187,9 @@ func (op *operator) StartProcess(r interface{}) (interface{}, error) {
 
 func init() {
 	rpcContract[methodStopProcess] = func(op *operator) (method methodCall, req interface{}) {
-		return op.StopProcess, new(StopProcessReq)
+		r := new(StopProcessReq)
+		r.ProcessID = op.provider.MakeProcessID()
+		return op.StopProcess, r
 	}
 }
 

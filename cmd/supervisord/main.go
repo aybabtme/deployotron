@@ -61,7 +61,7 @@ func handleAgent(ll *log.Log, cc io.ReadWriteCloser) {
 		time.Sleep(3 * time.Second)
 
 		ll.Info("stopping program")
-		_, err = agent.StopProcess(&rpc.StopProcessReq{ProcessID: res.ProcessID})
+		_, err = agent.StopProcess(&rpc.StopProcessReq{ProcessID: res.ProcessID, Timeout: time.Second})
 		if err != nil {
 			ll.Err(err).Error("couldn't send command to remote agent")
 			return
