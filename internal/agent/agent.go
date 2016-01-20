@@ -9,6 +9,11 @@ import (
 	"github.com/aybabtme/log"
 )
 
+type (
+	programID string
+	processID string
+)
+
 // An Agent supervises programs.
 type Agent struct {
 	client container.Client
@@ -26,11 +31,6 @@ func New(client container.Client) *Agent {
 		started:   make(map[processID]*managedProcess),
 	}
 }
-
-type (
-	programID string
-	processID string
-)
 
 /*
  General API

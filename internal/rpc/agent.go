@@ -36,6 +36,93 @@ func OperateAgent(agent *agent.Agent, provider container.ProgramProvider, r io.R
 	return op.service()
 }
 
+// Method definitions are in this order:
+//    const methodName = "rpc/Agent.MethodName"
+//
+//    type (
+//    	Req struct {Arg1 string}
+//    	Res struct {Res1 string}
+//    )
+//
+//    func (rep *representant) MethodName(*Req)      (*Res, error)
+//    func (op *operator)      MethodName(*Req,*Res) (error)
+
+func init() {
+	rpcContract[methodStartProcess] = func(op *operator) (method methodCall, req interface{}) {
+		return op.StartProcess, new(StartProcessReq)
+	}
+}
+
+const methodStartProcess = "rpc/agent.StartProcess"
+
+type (
+	// StartProcessReq is an RPC request
+	StartProcessReq struct {
+		ProgramName string `json:"program_name"`
+	}
+	// StartProcessRes is an RPC response
+	StartProcessRes struct {
+		ProcessID container.ProcessID `json:"process_id"`
+	}
+)
+
+func (rep *representant) StartProcess(req *StartProcessReq) (*StartProcessRes, error) {
+	res := new(StartProcessRes)
+	res.ProcessID = rep.provider.MakeProcessID()
+	return res, rep.call(methodStartProcess, req, res)
+}
+
+func (op *operator) StartProcess(r interface{}) (interface{}, error) {
+	req := r.(*StartProcessReq)
+	prgmID, err := op.provider.ProgramID(req.ProgramName)
+	if err != nil {
+		return nil, err
+	}
+	proc, err := op.agent.StartProcess(prgmID)
+	if err != nil {
+		return nil, err
+	}
+	return &StartProcessRes{ProcessID: proc}, nil
+}
+
+func init() {
+	rpcContract[methodStopProcess] = func(op *operator) (method methodCall, req interface{}) {
+		r := new(StopProcessReq)
+		r.ProcessID = op.provider.MakeProcessID()
+		return op.StopProcess, r
+	}
+}
+
+const methodStopProcess = "rpc/agent.StopProcess"
+
+type (
+	// StopProcessReq is an RPC request
+	StopProcessReq struct {
+		ProcessID container.ProcessID `json:"process_id"`
+		Timeout   time.Duration       `json:"timeout"`
+	}
+	// StopProcessRes is an RPC response
+	StopProcessRes struct{}
+)
+
+func (rep *representant) StopProcess(req *StopProcessReq) (*StopProcessRes, error) {
+	res := new(StopProcessRes)
+	return res, rep.call(methodStopProcess, req, res)
+}
+
+func (op *operator) StopProcess(r interface{}) (interface{}, error) {
+	req := r.(*StopProcessReq)
+	err := op.agent.StopProcess(req.ProcessID, req.Timeout)
+	if err != nil {
+		return nil, err
+	}
+	return &StopProcessRes{}, nil
+}
+
+/*
+	rpc internal details
+*/
+
 type rpcClientReq struct {
 	MethodName string      `json:"method_name"`
 	Request    interface{} `json:"request"`
@@ -134,87 +221,4 @@ func (op *operator) service() error {
 			return fmt.Errorf("sending method call response: %v", err)
 		}
 	}
-}
-
-// Method definitions are in this order:
-//    const methodName = "rpc/Agent.MethodName"
-//
-//    type (
-//    	Req struct {Arg1 string}
-//    	Res struct {Res1 string}
-//    )
-//
-//    func (rep *representant) MethodName(*Req)      (*Res, error)
-//    func (op *operator)      MethodName(*Req,*Res) (error)
-
-func init() {
-	rpcContract[methodStartProcess] = func(op *operator) (method methodCall, req interface{}) {
-		return op.StartProcess, new(StartProcessReq)
-	}
-}
-
-const methodStartProcess = "rpc/agent.StartProcess"
-
-type (
-	// StartProcessReq is an RPC request
-	StartProcessReq struct {
-		ProgramName string `json:"program_name"`
-	}
-	// StartProcessRes is an RPC response
-	StartProcessRes struct {
-		ProcessID container.ProcessID `json:"process_id"`
-	}
-)
-
-func (rep *representant) StartProcess(req *StartProcessReq) (*StartProcessRes, error) {
-	res := new(StartProcessRes)
-	res.ProcessID = rep.provider.MakeProcessID()
-	return res, rep.call(methodStartProcess, req, res)
-}
-
-func (op *operator) StartProcess(r interface{}) (interface{}, error) {
-	req := r.(*StartProcessReq)
-	prgmID, err := op.provider.ProgramID(req.ProgramName)
-	if err != nil {
-		return nil, err
-	}
-	proc, err := op.agent.StartProcess(prgmID)
-	if err != nil {
-		return nil, err
-	}
-	return &StartProcessRes{ProcessID: proc}, nil
-}
-
-func init() {
-	rpcContract[methodStopProcess] = func(op *operator) (method methodCall, req interface{}) {
-		r := new(StopProcessReq)
-		r.ProcessID = op.provider.MakeProcessID()
-		return op.StopProcess, r
-	}
-}
-
-const methodStopProcess = "rpc/agent.StopProcess"
-
-type (
-	// StopProcessReq is an RPC request
-	StopProcessReq struct {
-		ProcessID container.ProcessID `json:"process_id"`
-		Timeout   time.Duration       `json:"timeout"`
-	}
-	// StopProcessRes is an RPC response
-	StopProcessRes struct{}
-)
-
-func (rep *representant) StopProcess(req *StopProcessReq) (*StopProcessRes, error) {
-	res := new(StopProcessRes)
-	return res, rep.call(methodStopProcess, req, res)
-}
-
-func (op *operator) StopProcess(r interface{}) (interface{}, error) {
-	req := r.(*StopProcessReq)
-	err := op.agent.StopProcess(req.ProcessID, req.Timeout)
-	if err != nil {
-		return nil, err
-	}
-	return &StopProcessRes{}, nil
 }
