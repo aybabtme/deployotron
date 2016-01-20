@@ -68,16 +68,12 @@ type (
 
 func (rep *representant) StartProcess(req *StartProcessReq) (*StartProcessRes, error) {
 	res := new(StartProcessRes)
-	res.ProcessID = rep.provider.MakeProcessID()
 	return res, rep.call(methodStartProcess, req, res)
 }
 
 func (op *operator) StartProcess(r interface{}) (interface{}, error) {
 	req := r.(*StartProcessReq)
-	prgmID, err := op.provider.ProgramID(req.ProgramName)
-	if err != nil {
-		return nil, err
-	}
+	prgmID := op.provider.ProgramID(req.ProgramName)
 	proc, err := op.agent.StartProcess(prgmID)
 	if err != nil {
 		return nil, err
@@ -88,7 +84,6 @@ func (op *operator) StartProcess(r interface{}) (interface{}, error) {
 func init() {
 	rpcContract[methodStopProcess] = func(op *operator) (method methodCall, req interface{}) {
 		r := new(StopProcessReq)
-		r.ProcessID = op.provider.MakeProcessID()
 		return op.StopProcess, r
 	}
 }
@@ -117,6 +112,26 @@ func (op *operator) StopProcess(r interface{}) (interface{}, error) {
 		return nil, err
 	}
 	return &StopProcessRes{}, nil
+}
+
+const methodListAll = "rpc/agent.ListAll"
+
+type (
+	// ListAllReq is an RPC request
+	ListAllReq struct{}
+	// ListAllRes is an RPC response
+	ListAllRes struct {
+		Running map[container.ProgramID][]container.ProcessID
+	}
+)
+
+func (rep *representant) ListAll(req *ListAllReq) (*ListAllRes, error) {
+	res := new(ListAllRes)
+	return res, rep.call(methodListAll, req, res)
+}
+
+func (op *operator) ListAll(r interface{}) (interface{}, error) {
+	return &ListAllRes{Running: op.agent.ListAll()}, nil
 }
 
 /*

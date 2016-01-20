@@ -32,10 +32,7 @@ func main() {
 	client := osprocess.New(osprocess.NopInstaller())
 	// client = container.Log(client, log.KV("container", "osprocess"))
 
-	img, err := client.ProgramID("echoer v1")
-	if err != nil {
-		ll.Err(err).Fatal("can't create program ID")
-	}
+	img := client.ProgramID("echoer v1")
 	ll = ll.KV("program.id", img)
 
 	ag := agent.New(client)
@@ -58,10 +55,7 @@ func main() {
 	ll.Info("restarted, running")
 	time.Sleep(3 * time.Second)
 
-	newImg, err := client.ProgramID("echoer v2")
-	if err != nil {
-		ll.Err(err).Fatal("can't create program ID")
-	}
+	newImg := client.ProgramID("echoer v2")
 	ll.Info("upgrading")
 	if err := ag.UpgradeProgram(policy, img, newImg); err != nil {
 		ll.Err(err).Fatal("couldn't restart image")

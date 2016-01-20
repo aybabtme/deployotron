@@ -5,8 +5,7 @@ import "time"
 
 // A ProgramProvider can instantiate a ProgramID from a name.
 type ProgramProvider interface {
-	ProgramID(name string) (ProgramID, error)
-	MakeProcessID() ProcessID
+	ProgramID(name string) ProgramID
 }
 
 // A Client knows how to do container stuff.
@@ -30,11 +29,7 @@ type ProcessSvc interface {
 }
 
 // A ProgramID uniquely identifies a Program.
-type ProgramID interface {
-	Marshal() ([]byte, error)
-	Unmarshal(buf []byte) error
-	String() string
-}
+type ProgramID string
 
 // A Program is the template of a Process.
 type Program interface {
@@ -42,11 +37,7 @@ type Program interface {
 }
 
 // A ProcessID uniquely idenfities a Process.
-type ProcessID interface {
-	Marshal() ([]byte, error)
-	Unmarshal(buf []byte) error
-	String() string
-}
+type ProcessID string
 
 // A Process is the running execution of a program.
 type Process interface {

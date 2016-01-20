@@ -16,11 +16,9 @@ func Log(client Client, l *log.Log) Client {
 	return &logger{wrap: client, l: l}
 }
 
-func (log *logger) ProgramID(name string) (ProgramID, error) {
+func (log *logger) ProgramID(name string) ProgramID {
 	return log.wrap.ProgramID(name)
 }
-
-func (log *logger) MakeProcessID() ProcessID { return log.wrap.MakeProcessID() }
 
 func (log *logger) Programs() ProgramSvc {
 	return &logProgramSvc{wrap: log.wrap.Programs(), l: log.l}
